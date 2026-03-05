@@ -1,0 +1,112 @@
+path: ./  # 数据集根目录（相对路径）
+train: /E:/dataset-flower/flower/yolo-flower/images/train  # 训练集图片相对路径
+val: /E:/dataset-flower/flower/yolo-flower/images/val  # 验证集图片相对路径
+test: /E:/dataset-flower/flower/yolo-flower/images/test  # 测试集图片相对路径
+
+# 类别数量
+nc: 102  # 花卉种类数量
+
+# 类别名称列表
+names:
+  0: pink_primrose
+  1: hard_leaved_pocket_orchid
+  2: canterbury_bells
+  3: sweet_pea
+  4: english_marigold
+  5: tiger_lily
+  6: moon_orchid
+  7: bird_of_paradise
+  8: monkshood
+  9: globe_thistle
+  10: snapdragon
+  11: colt's_foot
+  12: king_protea
+  13: spear_thistle
+  14: yellow_iris
+  15: globe_flower
+  16: purple_coneflower
+  17: peruvian_lily
+  18: balloon_flower
+  19: giant_white_arum_lily
+  20: fire_lily
+  21: pincushion_flower
+  22: fritillary
+  23: red_ginger
+  24: grape_hyacinth
+  25: corn_poppy
+  26: prince_of_wales_feathers
+  27: stemless_gentian
+  28: artichoke
+  29: sweet_william
+  30: carnation
+  31: garden_phlox
+  32: love_in_the_mist
+  33: mexican_aster
+  34: alpine_sea_holly
+  35: ruby_red_dahlia
+  36: cape_flower
+  37: great_masterwort
+  38: siam_tulip
+  39: lenten_rose
+  40: barbeton_daisy
+  41: daffodil
+  42: sword_lily
+  43: poinsettia
+  44: bolero_deep_blue
+  45: wallflower
+  46: marigold
+  47: buttercup
+  48: oxeye_daisy
+  49: common_dandelion
+  50: petunia
+  51: wild_pansy
+  52: primula
+  53: sunflower
+  54: pelargonium
+  55: bishop_of_llandaff
+  56: gaura
+  57: geranium
+  58: orange_dahlia
+  59: pink_yellow_dahlia
+  60: cautleya_spicata
+  61: japanese_anemone
+  62: black_eyed_susan
+  63: silverbush
+  64: californian_poppy
+  65: osteospermum
+  66: spring_crocus
+  67: bearded_iris
+  68: windflower
+  69: tree_poppy
+  70: gazania
+  71: azalea
+  72: water_lily
+  73: rose
+  74: thorn_apple
+  75: morning_glory
+  76: passion_flower
+  77: lotus
+  78: toad_lily
+  79: anthurium
+  80: frangipani
+  81: clematis
+  82: hibiscus
+  83: columbine
+  84: desert_rose
+  85: tree_mallow
+  86: magnolia
+  87: cyclamen
+  88: watercress
+  89: canna_lily
+  90: hippeastrum
+  91: bee_balm
+  92: tillandsia_cyanea
+  93: foxglove
+  94: bougainvillea
+  95: camellia
+  96: mallow
+  97: mexican_petunia
+  98: bromelia
+  99: blanket_flower
+  100: trumpet_creeper
+  101: blackberry_lily

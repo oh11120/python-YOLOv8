@@ -1,0 +1,12 @@
+指标说明
+Epoch：当前 epoch / 总 epoch
+GPU_mem：训练时的 GPU 显存占用
+box_loss：边框回归损失（越小越好）
+cls_loss：分类损失（越小越好）
+dfl_loss：分布式边框回归损失（越小越好）
+Instances：当前 batch 的目标数量
+Size：训练输入图片尺寸（如 640）
+Box(P)：验证集精确率（越大越好）
+R：验证集召回率（越大越好）
+mAP50：IoU=0.50 的 mAP（越大越好）
+mAP50-95：IoU=0.50:0.95 平均 mAP（越大越好）
