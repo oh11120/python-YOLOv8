@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import inspect
+import re
 import ultralytics.nn.tasks as _tasks
 from ultralytics import YOLO
 
@@ -11,6 +13,50 @@ _tasks.EMA = EMA
 _tasks.DCNv3 = DCNv3
 _tasks.WConcat = WConcat
 _tasks.BiFPN = BiFPN
+
+
+def _patch_parse_model() -> None:
+    """Inject DCNv3 handling into parse_model's if/elif/else chain.
+
+    parse_model's else-branch records c2 = ch[f] (= input channels) for
+    unknown custom modules, but DCNv3 is a strided conv that changes channel
+    count.  We inject an elif that mirrors the Conv-like handling so that:
+      - c1 = ch[f]                          (actual input channels)
+      - c2 = make_divisible(args[0]*width)  (scaled output channels)
+      - args = [c1, c2, *args[1:]]          (prepend c1 for correct init)
+    """
+    src = inspect.getsource(_tasks.parse_model)
+
+    # Locate the catch-all else branch: `else:\n<indent>c2 = ch[f]`
+    match = re.search(r"\n([ \t]+)(else:)[ \t]*\n([ \t]+)(c2 = ch\[f\])", src)
+    if not match:
+        import warnings as _w
+        _w.warn(
+            "parse_model DCNv3 patch: pattern not found — "
+            "channel tracking for DCNv3 will be incorrect"
+        )
+        return
+
+    outer_indent = match.group(1)
+    inner_indent = match.group(3)
+
+    elif_block = (
+        f"\n{outer_indent}elif m is DCNv3:\n"
+        f"{inner_indent}c1, c2 = ch[f], args[0]\n"
+        f"{inner_indent}try:\n"
+        f"{inner_indent}    if c2 != nc:\n"
+        f"{inner_indent}        c2 = make_divisible(c2 * width, ch_mul)\n"
+        f"{inner_indent}except Exception:\n"
+        f"{inner_indent}    pass\n"
+        f"{inner_indent}args = [c1, c2, *args[1:]]"
+    )
+
+    old_str = match.group(0)
+    patched = src.replace(old_str, elif_block + old_str, 1)
+    exec(compile(patched, inspect.getfile(_tasks), "exec"), _tasks.__dict__)
+
+
+_patch_parse_model()
 
 
 def parse_args() -> argparse.Namespace:
