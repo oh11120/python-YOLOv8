@@ -7,15 +7,15 @@ import cv2
 import numpy as np
 import pandas as pd
 from PyQt5 import QtCore, QtGui, QtWidgets
+import ultralytics.nn.tasks as _tasks
 from ultralytics import YOLO
-from ultralytics.nn import modules as ulm
 
 from models.custom_modules import EMA, DCNv3, WConcat, BiFPN
 
-ulm.EMA = EMA
-ulm.DCNv3 = DCNv3
-ulm.WConcat = WConcat
-ulm.BiFPN = BiFPN
+_tasks.EMA = EMA
+_tasks.DCNv3 = DCNv3
+_tasks.WConcat = WConcat
+_tasks.BiFPN = BiFPN
 
 try:
     import onnxruntime as ort

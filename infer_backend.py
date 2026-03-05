@@ -4,15 +4,15 @@ import argparse
 from pathlib import Path
 
 import cv2
+import ultralytics.nn.tasks as _tasks
 from ultralytics import YOLO
-from ultralytics.nn import modules as ulm
 
 from models.custom_modules import EMA, DCNv3, WConcat, BiFPN
 
-ulm.EMA = EMA
-ulm.DCNv3 = DCNv3
-ulm.WConcat = WConcat
-ulm.BiFPN = BiFPN
+_tasks.EMA = EMA
+_tasks.DCNv3 = DCNv3
+_tasks.WConcat = WConcat
+_tasks.BiFPN = BiFPN
 
 
 def parse_args() -> argparse.Namespace:
