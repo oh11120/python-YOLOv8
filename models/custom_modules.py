@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import warnings
+import math
 from typing import List
 
 import torch
 import torch.nn as nn
+import torchvision.ops as tvops
 
 
 def _autopad(k: int, p: int | None = None) -> int:
@@ -51,27 +52,64 @@ class EMA(nn.Module):
 
 
 class DCNv3(nn.Module):
-    """Deformable Conv v3 (fallback to standard Conv).
+    """Deformable Convolution v3 using torchvision.ops.deform_conv2d.
 
-    Requires the parse_model patch in train.py so that parse_model calls
-    DCNv3(c1, c2, k, s) with the correct input channels prepended — the
-    same calling convention used for ultralytics' built-in Conv layers.
+    Offset and mask generators share the same stride as the main conv so
+    their output spatial size matches the expected deform_conv2d input.
+    Offsets are zero-initialised so the module starts as a regular Conv,
+    giving stable early training before the offsets learn to be useful.
     """
 
-    _warned = False
-
-    def __init__(self, c1: int, c2: int, k: int = 3, s: int = 1, p: int | None = None, g: int = 1, act: bool = True):
+    def __init__(self, c1: int, c2: int, k: int = 3, s: int = 1,
+                 p: int | None = None, g: int = 1, act: bool = True):
         super().__init__()
         p = _autopad(k, p)
+        self.k, self.s, self.p, self.g = k, s, p, g
+
+        # Lightweight offset and mask predictors (stride=s → correct spatial)
+        self.offset_conv = nn.Conv2d(c1, 2 * k * k, k, stride=s, padding=p, bias=True)
+        self.mask_conv   = nn.Conv2d(c1, k * k,     k, stride=s, padding=p, bias=True)
+
+        # Main conv weight; bias absorbed by BN
+        self.weight = nn.Parameter(torch.empty(c2, c1 // g, k, k))
+        self.bn  = nn.BatchNorm2d(c2)
         self.act = nn.SiLU() if act else nn.Identity()
-        if not DCNv3._warned:
-            warnings.warn("DCNv3 disabled; falling back to Conv2d for stability on this environment")
-            DCNv3._warned = True
-        self.conv = nn.Conv2d(c1, c2, k, stride=s, padding=p, groups=g, bias=False)
-        self.bn = nn.BatchNorm2d(c2)
+
+        # Zero-init offsets → identity start (same as regular Conv)
+        # Zero-init mask bias → sigmoid(0) = 0.5 (uniform modulation)
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        nn.init.zeros_(self.offset_conv.weight)
+        nn.init.zeros_(self.offset_conv.bias)
+        nn.init.zeros_(self.mask_conv.weight)
+        nn.init.zeros_(self.mask_conv.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.act(self.bn(self.conv(x)))
+        offset = self.offset_conv(x)
+        mask   = torch.sigmoid(self.mask_conv(x))
+        out = tvops.deform_conv2d(
+            x, offset, self.weight, mask=mask,
+            stride=self.s, padding=self.p, groups=self.g,
+        )
+        return self.act(self.bn(out))
+
+
+class WeightedSum(nn.Module):
+    """BiFPN-style learnable weighted sum (fast-normalise variant).
+
+    Fuses N feature maps of identical shape into one without changing
+    channels — a drop-in replacement for Concat followed by a channel-
+    reduction Conv.  Uses ReLU + normalise (original BiFPN paper) for
+    numerical stability.
+    """
+
+    def __init__(self, n: int = 2):
+        super().__init__()
+        self.weights = nn.Parameter(torch.ones(n))
+
+    def forward(self, inputs: List[torch.Tensor]) -> torch.Tensor:
+        w = torch.relu(self.weights)
+        w = w / (w.sum() + 1e-4)
+        return sum(w[i] * x for i, x in enumerate(inputs))
 
 
 class WConcat(nn.Module):

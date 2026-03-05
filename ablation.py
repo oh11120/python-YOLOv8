@@ -27,12 +27,13 @@ from pathlib import Path
 import ultralytics.nn.tasks as _tasks
 from ultralytics import YOLO
 
-from models.custom_modules import EMA, DCNv3, WConcat, BiFPN
+from models.custom_modules import EMA, DCNv3, WConcat, WeightedSum, BiFPN
 
 # Register custom modules into Ultralytics' parse_model namespace
 _tasks.EMA = EMA
 _tasks.DCNv3 = DCNv3
 _tasks.WConcat = WConcat
+_tasks.WeightedSum = WeightedSum
 _tasks.BiFPN = BiFPN
 
 
