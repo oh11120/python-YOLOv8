@@ -16,22 +16,32 @@ class EMA(nn.Module):
 
     Lightweight attention that aggregates spatial context along H and W
     with group-wise channel interaction.
+
+    parse_model calls this as EMA(channels) where `channels` comes from the
+    YAML and may not match the actual (width-scaled) input channels.
+    Conv layers are therefore built lazily on the first forward pass.
     """
 
-    def __init__(self, channels: int, factor: int = 8):
+    def __init__(self, channels: int = 0, factor: int = 8):
         super().__init__()
-        if channels % factor != 0:
-            factor = 1
-        self.groups = factor
-        self.group_channels = channels // self.groups
+        self._factor = factor
         self.pool_h = nn.AdaptiveAvgPool2d((None, 1))
         self.pool_w = nn.AdaptiveAvgPool2d((1, None))
-        self.conv1 = nn.Conv2d(channels, channels, kernel_size=1, bias=True)
-        self.conv2 = nn.Conv2d(channels, channels, kernel_size=1, bias=True)
         self.sigmoid = nn.Sigmoid()
+        # conv1/conv2 are built lazily once the actual channel count is known.
+        self.conv1 = None
+        self.conv2 = None
+
+    def _build(self, c: int, device: torch.device) -> None:
+        factor = self._factor if c % self._factor == 0 else 1
+        self.groups = factor
+        self.group_channels = c // factor
+        self.conv1 = nn.Conv2d(c, c, kernel_size=1, bias=True).to(device)
+        self.conv2 = nn.Conv2d(c, c, kernel_size=1, bias=True).to(device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        b, c, h, w = x.shape
+        if self.conv1 is None:
+            self._build(x.shape[1], x.device)
         x_h = self.pool_h(x)
         x_w = self.pool_w(x).permute(0, 1, 3, 2)
         a_h = self.conv1(x_h)
@@ -41,35 +51,28 @@ class EMA(nn.Module):
 
 
 class DCNv3(nn.Module):
-    """Deformable Conv v3 (fallback to standard Conv if ops unavailable).
+    """Deformable Conv v3 (fallback to standard Conv).
 
-    This is a practical implementation using torchvision.ops.DeformConv2d when
-    available. If not present, it silently falls back to nn.Conv2d so training
-    can proceed on environments without the op.
+    parse_model calls this as DCNv3(c2, k, s) — no c1 is prepended for
+    custom modules in the else-branch of parse_model.  Using LazyConv2d
+    and LazyBatchNorm2d lets PyTorch infer in_channels on the first forward
+    pass (triggered by ultralytics' stride-detection step during __init__).
     """
 
     _warned = False
 
-    def __init__(self, c1: int, c2: int, k: int = 3, s: int = 1, p: int | None = None, g: int = 1, act: bool = True):
+    def __init__(self, c2: int, k: int = 3, s: int = 1, p: int | None = None, g: int = 1, act: bool = True):
         super().__init__()
         p = _autopad(k, p)
         self.act = nn.SiLU() if act else nn.Identity()
-        # NOTE: DeformConv2d on Windows often crashes (access violation) even when installed.
-        # Always fall back to a standard Conv2d to keep training stable.
-        self.use_dcn = False
         if not DCNv3._warned:
             warnings.warn("DCNv3 disabled; falling back to Conv2d for stability on this environment")
             DCNv3._warned = True
-        self.conv = nn.Conv2d(c1, c2, k, stride=s, padding=p, groups=g, bias=False)
-        self.bn = nn.BatchNorm2d(c2)
+        self.conv = nn.LazyConv2d(c2, k, stride=s, padding=p, groups=g, bias=False)
+        self.bn = nn.LazyBatchNorm2d()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.use_dcn:
-            offset = self.offset(x)
-            x = self.dcn(x, offset)
-        else:
-            x = self.conv(x)
-        return self.act(self.bn(x))
+        return self.act(self.bn(self.conv(x)))
 
 
 class WConcat(nn.Module):
