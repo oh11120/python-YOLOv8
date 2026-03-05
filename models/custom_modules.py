@@ -53,25 +53,35 @@ class EMA(nn.Module):
 class DCNv3(nn.Module):
     """Deformable Conv v3 (fallback to standard Conv).
 
-    parse_model calls this as DCNv3(c2, k, s) — no c1 is prepended for
-    custom modules in the else-branch of parse_model.  Using LazyConv2d
-    and LazyBatchNorm2d lets PyTorch infer in_channels on the first forward
-    pass (triggered by ultralytics' stride-detection step during __init__).
+    parse_model calls this as DCNv3(c2, k, s) without prepending c1, so
+    in_channels is unknown at construction time.  conv/bn are built lazily
+    on the first forward pass (triggered by ultralytics' stride-detection
+    step), avoiding UninitializedParameter issues with LazyConv2d.
     """
 
     _warned = False
 
     def __init__(self, c2: int, k: int = 3, s: int = 1, p: int | None = None, g: int = 1, act: bool = True):
         super().__init__()
-        p = _autopad(k, p)
+        self._c2 = c2
+        self._k = k
+        self._s = s
+        self._p = _autopad(k, p)
+        self._g = g
         self.act = nn.SiLU() if act else nn.Identity()
         if not DCNv3._warned:
             warnings.warn("DCNv3 disabled; falling back to Conv2d for stability on this environment")
             DCNv3._warned = True
-        self.conv = nn.LazyConv2d(c2, k, stride=s, padding=p, groups=g, bias=False)
-        self.bn = nn.LazyBatchNorm2d()
+        self.conv = None
+        self.bn = None
+
+    def _build(self, c1: int, device: torch.device) -> None:
+        self.conv = nn.Conv2d(c1, self._c2, self._k, stride=self._s, padding=self._p, groups=self._g, bias=False).to(device)
+        self.bn = nn.BatchNorm2d(self._c2).to(device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.conv is None:
+            self._build(x.shape[1], x.device)
         return self.act(self.bn(self.conv(x)))
 
 
