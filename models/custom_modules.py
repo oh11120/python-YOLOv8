@@ -88,7 +88,7 @@ class DCNv3(nn.Module):
         mask   = torch.sigmoid(self.mask_conv(x))
         out = tvops.deform_conv2d(
             x, offset, self.weight, mask=mask,
-            stride=self.s, padding=self.p, groups=self.g,
+            stride=self.s, padding=self.p,
         )
         return self.act(self.bn(out))
 
