@@ -24,6 +24,8 @@ import os
 import sys
 from pathlib import Path
 
+import inspect
+import re
 import ultralytics.nn.tasks as _tasks
 from ultralytics import YOLO
 
@@ -35,6 +37,39 @@ _tasks.DCNv3 = DCNv3
 _tasks.WConcat = WConcat
 _tasks.WeightedSum = WeightedSum
 _tasks.BiFPN = BiFPN
+
+
+def _patch_parse_model() -> None:
+    """Inject DCNv3 handling into parse_model's if/elif/else chain.
+
+    Without this patch parse_model's else-branch calls DCNv3(*yaml_args)
+    directly, which maps YAML args[0]=c2 into c1, corrupting the channel
+    count.  The patch mirrors the Conv-like handling so c1 is prepended.
+    """
+    src = inspect.getsource(_tasks.parse_model)
+    match = re.search(r"\n([ \t]+)(else:)[ \t]*\n([ \t]+)(c2 = ch\[f\])", src)
+    if not match:
+        import warnings as _w
+        _w.warn("parse_model DCNv3 patch: pattern not found — channel tracking may be incorrect")
+        return
+    outer_indent = match.group(1)
+    inner_indent = match.group(3)
+    elif_block = (
+        f"\n{outer_indent}elif m is DCNv3:\n"
+        f"{inner_indent}c1, c2 = ch[f], args[0]\n"
+        f"{inner_indent}try:\n"
+        f"{inner_indent}    if c2 != nc:\n"
+        f"{inner_indent}        c2 = make_divisible(c2 * width, ch_mul)\n"
+        f"{inner_indent}except Exception:\n"
+        f"{inner_indent}    pass\n"
+        f"{inner_indent}args = [c1, c2, *args[1:]]"
+    )
+    old_str = match.group(0)
+    patched = src.replace(old_str, elif_block + old_str, 1)
+    exec(compile(patched, inspect.getfile(_tasks), "exec"), _tasks.__dict__)
+
+
+_patch_parse_model()
 
 
 # ---------------------------------------------------------------------------
