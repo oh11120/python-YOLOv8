@@ -29,45 +29,42 @@ import re
 import ultralytics.nn.tasks as _tasks
 from ultralytics import YOLO
 
-from models.custom_modules import EMA, DCNv3, WConcat, WeightedSum, BiFPN
+from models.custom_modules import EMA, DCNv3, WConcat, WeightedSum
 
 # Register custom modules into Ultralytics' parse_model namespace
 _tasks.EMA = EMA
 _tasks.DCNv3 = DCNv3
 _tasks.WConcat = WConcat
 _tasks.WeightedSum = WeightedSum
-_tasks.BiFPN = BiFPN
 
 
 def _patch_parse_model() -> None:
-    """Inject DCNv3 handling into parse_model's if/elif/else chain.
-
-    Without this patch parse_model's else-branch calls DCNv3(*yaml_args)
-    directly, which maps YAML args[0]=c2 into c1, corrupting the channel
-    count.  The patch mirrors the Conv-like handling so c1 is prepended.
-    """
     src = inspect.getsource(_tasks.parse_model)
     match = re.search(r"\n([ \t]+)(else:)[ \t]*\n([ \t]+)(c2 = ch\[f\])", src)
     if not match:
         import warnings as _w
-        _w.warn("parse_model DCNv3 patch: pattern not found — channel tracking may be incorrect")
+        _w.warn("parse_model patch: pattern not found")
         return
     outer_indent = match.group(1)
     inner_indent = match.group(3)
     elif_block = (
-        f"\n{outer_indent}elif m is DCNv3:\n"
+        f"\n{outer_indent}elif m is EMA:\n"
+        f"{inner_indent}c2 = ch[f[0] if isinstance(f, list) else f]\n"
+        f"{inner_indent}args = [c2]\n"
+        f"{outer_indent}elif m is DCNv3:\n"
         f"{inner_indent}c1, c2 = ch[f], args[0]\n"
         f"{inner_indent}try:\n"
         f"{inner_indent}    if c2 != nc:\n"
         f"{inner_indent}        c2 = make_divisible(c2 * width, ch_mul)\n"
         f"{inner_indent}except Exception:\n"
         f"{inner_indent}    pass\n"
-        f"{inner_indent}args = [c1, c2, *args[1:]]"
+        f"{inner_indent}args = [c1, c2, *args[1:]]\n"
+        f"{outer_indent}elif m is WeightedSum:\n"
+        f"{inner_indent}c2 = ch[f[0] if isinstance(f, list) else f]"
     )
     old_str = match.group(0)
     patched = src.replace(old_str, elif_block + old_str, 1)
     exec(compile(patched, inspect.getfile(_tasks), "exec"), _tasks.__dict__)
-
 
 _patch_parse_model()
 
@@ -104,6 +101,12 @@ VARIANTS: list[dict] = [
         "name": "ours",
         "label": "Ours (EMA+DCNv3+BiFPN)",
         "model": "models/yolov8_flower.yaml",
+        "uses_custom": True,
+    },
+    {
+        "name": "dcnv3_bifpn",
+        "label": "DCNv3+BiFPN (no EMA)",
+        "model": "models/yolov8_dcnv3_bifpn.yaml",
         "uses_custom": True,
     },
 ]
@@ -169,7 +172,7 @@ def train_variant(variant: dict, args: argparse.Namespace) -> None:
         mosaic=1.0,
         mixup=0.0,
         erasing=0.2,
-        close_mosaic=10,
+        close_mosaic=max(10, args.epochs // 10),
     )
 
 

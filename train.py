@@ -6,14 +6,13 @@ import re
 import ultralytics.nn.tasks as _tasks
 from ultralytics import YOLO
 
-from models.custom_modules import EMA, DCNv3, WConcat, WeightedSum, BiFPN
+from models.custom_modules import EMA, DCNv3, WConcat, WeightedSum
 
 # Register custom modules into Ultralytics' parse_model namespace
 _tasks.EMA = EMA
 _tasks.DCNv3 = DCNv3
 _tasks.WConcat = WConcat
 _tasks.WeightedSum = WeightedSum
-_tasks.BiFPN = BiFPN
 
 
 def _patch_parse_model() -> None:
@@ -42,14 +41,19 @@ def _patch_parse_model() -> None:
     inner_indent = match.group(3)
 
     elif_block = (
-        f"\n{outer_indent}elif m is DCNv3:\n"
+        f"\n{outer_indent}elif m is EMA:\n"
+        f"{inner_indent}c2 = ch[f[0] if isinstance(f, list) else f]\n"
+        f"{inner_indent}args = [c2]\n"
+        f"{outer_indent}elif m is DCNv3:\n"
         f"{inner_indent}c1, c2 = ch[f], args[0]\n"
         f"{inner_indent}try:\n"
         f"{inner_indent}    if c2 != nc:\n"
         f"{inner_indent}        c2 = make_divisible(c2 * width, ch_mul)\n"
         f"{inner_indent}except Exception:\n"
         f"{inner_indent}    pass\n"
-        f"{inner_indent}args = [c1, c2, *args[1:]]"
+        f"{inner_indent}args = [c1, c2, *args[1:]]\n"
+        f"{outer_indent}elif m is WeightedSum:\n"
+        f"{inner_indent}c2 = ch[f[0] if isinstance(f, list) else f]"
     )
 
     old_str = match.group(0)
@@ -106,7 +110,7 @@ def main() -> None:
         mosaic=1.0,
         mixup=0.0,
         erasing=0.2,
-        close_mosaic=10,
+        close_mosaic=20,
     )
 
 
