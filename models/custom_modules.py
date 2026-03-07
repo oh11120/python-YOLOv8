@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+import re
 from typing import List
 
 import torch
@@ -80,3 +82,53 @@ class WConcat(nn.Module):
         w = torch.softmax(self.weights, dim=0)
         scaled = [x * w[i] for i, x in enumerate(inputs)]
         return torch.cat(scaled, dim=self.d)
+
+
+def register_custom_modules() -> None:
+    """Register all custom modules into Ultralytics parse_model and patch channel tracking.
+
+    Call this once before constructing any YOLO model that uses custom modules.
+    Safe to call multiple times (idempotent via module attribute check).
+    """
+    import ultralytics.nn.tasks as _tasks
+
+    _tasks.EMA = EMA
+    _tasks.DCNv3 = DCNv3
+    _tasks.WConcat = WConcat
+    _tasks.WeightedSum = WeightedSum
+
+    # Only patch once
+    if getattr(_tasks, "_custom_modules_patched", False):
+        return
+
+    src = inspect.getsource(_tasks.parse_model)
+    match = re.search(r"\n([ \t]+)(else:)[ \t]*\n([ \t]+)(c2 = ch\[f\])", src)
+    if not match:
+        import warnings
+        warnings.warn(
+            "parse_model DCNv3 patch: pattern not found — "
+            "channel tracking for DCNv3 will be incorrect"
+        )
+        return
+
+    outer_indent = match.group(1)
+    inner_indent = match.group(3)
+    elif_block = (
+        f"\n{outer_indent}elif m is EMA:\n"
+        f"{inner_indent}c2 = ch[f[0] if isinstance(f, list) else f]\n"
+        f"{inner_indent}args = [c2]\n"
+        f"{outer_indent}elif m is DCNv3:\n"
+        f"{inner_indent}c1, c2 = ch[f], args[0]\n"
+        f"{inner_indent}try:\n"
+        f"{inner_indent}    if c2 != nc:\n"
+        f"{inner_indent}        c2 = make_divisible(c2 * width, ch_mul)\n"
+        f"{inner_indent}except Exception:\n"
+        f"{inner_indent}    pass\n"
+        f"{inner_indent}args = [c1, c2, *args[1:]]\n"
+        f"{outer_indent}elif m is WeightedSum:\n"
+        f"{inner_indent}c2 = ch[f[0] if isinstance(f, list) else f]"
+    )
+    old_str = match.group(0)
+    patched = src.replace(old_str, elif_block + old_str, 1)
+    exec(compile(patched, inspect.getfile(_tasks), "exec"), _tasks.__dict__)
+    _tasks._custom_modules_patched = True
